@@ -1,0 +1,6 @@
+GitPython
+Markdown
+pdfkit
+PyYAML
+packaging
+tqdm
