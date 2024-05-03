@@ -1,0 +1,138 @@
+@import url('https://fonts.googleapis.com/css2?family=Open+Sans&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Fira+Code&display=swap');
+
+/* Custom styling for the cover page */
+
+.master-container {
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    padding-top:300px;
+    padding-bottom:300px;
+}
+.container {
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    height: 50vh;
+    background-color: #f0f0f0;
+    padding-top:100px;
+    padding-bottom:100px;
+}
+.title {
+    vertical-align: middle;
+    font-size: 3em;
+    margin-bottom: 0.5em;
+    justify-content: center;
+    align-items: center;
+    line-height: 1.2em;
+    font-variant: small-caps;
+}
+.date {
+    font-size: 1.5em;
+}
+
+/* Custom styling for the main contents */
+
+.page-break { 
+    page-break-after: always; 
+}
+
+.doc-path {
+    color:gray;
+    text-align: left;
+    margin-bottom: 1.5em;
+}
+
+.code-header {
+    color: darkblue;
+    text-align: right;
+    font-size: 0.9em;
+}
+
+code {
+    /* font-family: 'Courier New', monospace; */
+    font-family: 'Fira Code', sans-serif;
+    background-color: #f0f0f0;
+    padding: 2px 0px 2px;
+    border-radius: 4px;
+}
+
+pre {
+    background-color: #f0f0f0;
+    padding: 10px;
+    border-radius: 4px;
+    margin-top: 0;
+    margin-bottom: 1.5em;
+    padding-left: 20px;
+    margin-left: 20px;
+    /* font-size: 1.2em; */
+    line-height: 1.5em;
+}
+
+body {
+    font-family: 'Open Sans', sans-serif;
+    color: #333;
+    padding: 20px;
+    line-height: normal;
+    font-size: 1.4em;
+    background-color: #fff;
+}
+
+h2, h3, h4, h5, h6 {
+    color: #444;
+    margin-top: 1em;
+}
+
+h1 {
+    color: #444;
+    font-size: 2em;
+    margin-top: 0;
+    margin-bottom: 0;
+}
+
+h2 {
+    font-size: 1.5em;
+}
+
+/* Add styles for other heading levels if needed */
+
+p {
+    margin: 0.4em 0;
+}
+
+/* Custom styling for tables */
+table {
+    border-collapse: collapse;
+    width: 100%;
+    margin-top: 20px;
+    margin-bottom: 50px;
+}
+
+th, td {
+    border: 1px solid #ddd;
+    padding: 8px;
+    text-align: left;
+    font-size: 1.4em;
+}
+
+tr:nth-child(even) {
+    background-color: #f2f2f2;
+}
+
+th {
+    padding-top: 12px;
+    padding-bottom: 12px;
+    background-color: darkblue;
+    color: white;
+}
+
+/* Additional CSS for scaling images */
+img {
+    max-width: 100%;
+    height: auto;
+}
