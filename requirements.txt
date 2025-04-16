@@ -4,3 +4,5 @@ pdfkit
 PyYAML
 packaging
 tqdm
+bs4
+requests
