@@ -5,22 +5,90 @@ import tempfile
 import yaml
 import re
 import html
+import requests
+from bs4 import BeautifulSoup
 from git import Repo, RemoteProgress
 from datetime import datetime
 from packaging import version
 from tqdm import tqdm
+from urllib.parse import quote, unquote
 
 
-def process_image_paths(md_content):
+def get_image_base_url(use_default=False):
+    """Detect the base URL for Next.js documentation images
+
+    The storage domain part may change over time as Vercel updates their infrastructure
+    This function looks for image URLs in the format https://(1)/docs/(2)
+    and returns the first part https://(1) as the base path.
+    
+    Args:
+        use_default (bool): If True, skip online checking and just return the known URL
+    
+    Returns:
+        str: The base URL for Next.js documentation images
+    """
+
+    # The known working base URL as of April 2025
+    known_base_url = "https://nextjs.org/_next/image?url=https://h8DxKfmAPhn8O0p3.public.blob.vercel-storage.com"
+    
+    if use_default:
+        print(f"Using known base URL (from settings): {known_base_url}")
+        return known_base_url
+    
+    try:
+        print("Analyzing Next.js documentation to find base URL...")
+        # URL of the page to analyze
+        url = "https://nextjs.org/docs/app/getting-started/installation"
+        
+        # Fetch the page content
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()  # Raise an exception for HTTP errors
+        
+        # Parse the HTML
+        soup = BeautifulSoup(response.text, 'html.parser')
+        
+        # Find all image tags
+        img_tags = soup.find_all('img')
+        print(f"Found {len(img_tags)} image tags in online documentation")
+        
+        # Store all image URLs that contain '/docs/'
+        docs_urls = []
+        for img in img_tags:
+            src = img.get('src')
+            if src and ("/docs/" in src or "%2Fdocs%2F" in src):
+                if src.startswith('/_next/image'):
+                    src = 'https://nextjs.org' + src
+                docs_urls.append(unquote(src))
+
+        print(f"Found {len(docs_urls)} image URLs containing '/docs/'")
+
+        # Split the URL at '/docs/' and get the first part
+        for url in docs_urls:
+            parts = url.split('/docs/')
+            if len(parts) >= 2:
+                base_url = parts[0]
+                print(f"Found matching base URL: {base_url}")
+                return base_url
+                 
+        # If no matching base URL was found, use the known one
+        print(f"No matching base URL found. Using known base URL: {known_base_url}")
+        return known_base_url
+        
+    except Exception as e:
+        print(f"Error detecting base URL: {e}")
+        print(f"Using known base URL: {known_base_url}")
+        return known_base_url
+
+def process_image_paths(md_content, base_path, path_args):
+    """Replace relative image paths with absolute URLs"""
     # Define a regular expression pattern to find image tags
-    pattern = r'src(?:Light|Dark)="(.*?)"'
+    pattern = r'src(?:Light|Dark)?="(.*?)"'
 
     # Function to replace the relative path with an absolute path
     def replace(match):
         relative_path = match.group(1)
+        # Simply concatenate the base path with the relative path and add quality parameters
         absolute_path = f'{base_path}{relative_path}{path_args}'
-
-        # Print the original and new image URLs for debugging
         return f'src="{absolute_path}"'
 
     # Use the sub method to replace all occurrences
@@ -29,16 +97,25 @@ def process_image_paths(md_content):
 
 def preprocess_code_blocks(md_content):
     # Regular expression to match extended code blocks with filename and language
-    pattern = r'```(\w+)?\s+filename="([^"]+)"\s*(switcher)?\n(.*?)```'
+    # This pattern now captures optional attributes like highlight and switcher
+    pattern = r'```(\w+)?\s+filename="([^"]+)"((?:\s+[\w\{\}\d\,\-]+)*)\n(.*?)```'
 
     def replace(match):
         language = match.group(1) if match.group(1) else ''
         filename = match.group(2)
+        attributes = match.group(3) or ''  # Additional attributes like highlight, switcher
         code_block = match.group(4)
 
         # Format the header with filename and language
-        header = f'<div class="code-header"><i>{filename} ({language})</i></div>' if language else f'<div class="code-header"><i>{filename}</i></div>'
+        header = f'<div class="code-header"><i>{filename} ({language})</i>'
+        
+        # Add any additional attributes as metadata
+        if attributes.strip():
+            header += f' <span class="code-attributes">{attributes.strip()}</span>'
+        
+        header += '</div>'
 
+        # Return the code block with proper formatting
         return f'{header}\n```{language}\n{code_block}\n```'
 
     # Replace all occurrences in the content
@@ -201,7 +278,7 @@ def process_files(files, repo_dir, docs_dir):
 
             # Process the markdown content for image paths
             if Change_img_url:
-                md_content = process_image_paths(md_content)
+                md_content = process_image_paths(md_content, base_path, path_args)
 
             # Process the markdown content for non standard code blocks
             md_content = preprocess_code_blocks(md_content)
@@ -227,7 +304,7 @@ def process_files(files, repo_dir, docs_dir):
                     depth = rel_path.count(os.sep)  # Count separators to determine depth
                     file_basename = os.path.basename(file_path)                    
                     if file_basename.startswith("index.") and depth > 0:
-                        depth += -1  # or another title for the main index
+                        depth -= 1  # or another title for the main index
                     indent = '&nbsp;' * 5 * depth  # Adjust indentation based on depth
 
                     # Numbering: Ensure numbering has enough levels
@@ -235,7 +312,7 @@ def process_files(files, repo_dir, docs_dir):
                         numbering.append(0)
 
                     # Numbering: Increment at the current level
-                    numbering[depth] += 1
+                    numbering[depth] += 1 if index > 0 else 0 # Start at 0 if it is the upper level and 1 deeper levels
 
                     # Numbering: Reset for any lower levels
                     for i in range(depth + 1, len(numbering)):
@@ -246,7 +323,7 @@ def process_files(files, repo_dir, docs_dir):
 
                     # TOC: Generate the section title
                     toc_title = data.get('title', os.path.splitext(os.path.basename(file_path))[0].title())
-                    toc_full_title = f"{toc_numbering} - {toc_title}"
+                    toc_full_title = f"{toc_numbering} - {toc_title}" if index > 0 else f"{toc_title}"
                     toc += f"{indent}<a href='#{toc_full_title}'>{toc_full_title}</a><br/>"
 
                     # Page Content: Format the parsed YAML to HTML
@@ -255,6 +332,10 @@ def process_files(files, repo_dir, docs_dir):
                     <div class="doc-path"><p>Documentation path: {file_path.replace(chr(92),'/').replace('.mdx', '').replace(repo_dir + '/' + docs_dir,'')}</p></div>
                     <p><strong>Description:</strong> {data.get('description', 'No description')}</p>
                     """
+                    if data.get('source', {}):
+                        html_page_content += f"""
+                        <p><strong>Refer to:</strong> "{data.get('source', {})}"</p>
+                        """
                     if data.get('related', {}):
                         html_page_content += f"""
                         <div style="margin-left:20px;">
@@ -275,7 +356,23 @@ def process_files(files, repo_dir, docs_dir):
                 html_page_content = ""
 
             # Convert Markdown to HTML with table support and add content to the identified header
-            html_page_content += markdown.markdown(md_content, extensions=['fenced_code', 'codehilite', 'tables', 'footnotes', 'toc', 'abbr', 'attr_list', 'def_list', 'smarty', 'admonition'])
+            if not data.get('source', {}):
+                # Escape HTML in code blocks before converting to HTML
+                # First, find all code blocks and escape their content
+                code_block_pattern = re.compile(r'```.*?```', re.DOTALL)
+                
+                def escape_code_block(match):
+                    code_block = match.group(0)
+                    # Escape HTML tags within the code block
+                    escaped_content = re.sub(r'<', '&lt;', code_block)
+                    escaped_content = re.sub(r'>', '&gt;', escaped_content)
+                    return escaped_content
+                
+                # Escape HTML in code blocks
+                md_content_escaped = code_block_pattern.sub(escape_code_block, md_content)
+                
+                # Convert to HTML with extended features
+                html_page_content += markdown.markdown(md_content_escaped, extensions=['fenced_code', 'codehilite', 'tables', 'footnotes', 'toc', 'abbr', 'attr_list', 'def_list', 'smarty', 'admonition'])
             
             # Add page content to all cumulated pages content
             html_all_pages_content += html_page_content
@@ -318,15 +415,25 @@ if __name__ == "__main__":
     branch = "canary"
     docs_dir = "docs"
 
-    # Define a base path and quality for the image URLs
+    # Image URL handling configuration
     Change_img_url = True
-    base_path = "https://nextjs.org/_next/image?url="
-    path_args = "&w=1920&q=75"
+    
+    # Check if we should use dynamic URL detection or the default URL
+    use_default_url = False  # Set to True to skip online checking and use the default URL
+    
+    # Get the base URL for images (either dynamically detected or default)
+    base_path = get_image_base_url(use_default=use_default_url)
+    
+    # Quality parameters for Next.js image optimization
+    path_args = "&w=3840&q=75"  # Higher resolution for better quality
 
     # Clone the repository
+    print("--------------------------------------------------------")
+    print("Cloning the repository...")
     clone_repo(repo_url, branch, docs_dir, repo_dir)
 
     # Traverse the docs directory and convert each markdown file to HTML
+    print("--------------------------------------------------------")
     print ("Converting the Documentation to HTML...")
     docs_dir_full_path = os.path.join(repo_dir, docs_dir)
     files_to_process = get_files_sorted(docs_dir_full_path)
@@ -373,6 +480,8 @@ if __name__ == "__main__":
         print("HTML Cover exported.")
 
     # Convert the combined HTML content to PDF with a cover and a table of contents
+    print("--------------------------------------------------------")
+    print("Converting HTML to PDF...")
     if is_file_open(output_pdf):
         print("The output file is already open in another process. Please close it and try again.")
     else:
@@ -380,8 +489,12 @@ if __name__ == "__main__":
             'encoding': 'UTF-8',
             'page-size': 'A4',
             'quiet': '',
-            'image-dpi': 150, # General reco.: printer - hq, 300 dpi| ebook - low quality, 150 dpi| screen-view-only quality, 72 dpi
-            'image-quality': 75,
+            'image-dpi': 600,  # General reco.: printer - hq, 300 dpi| ebook - low quality, 150 dpi| screen-view-only quality, 72 dpi
+            'image-quality': 80,  # Increased from 75 to 100 for maximum quality
+            'enable-smart-shrinking': '',  # Better handling of content
+            'zoom': 1.0,  # Default zoom level
+            'javascript-delay': 1000,  # Wait for JavaScript to execute
+            'no-stop-slow-scripts': '',  # Don't stop slow scripts
             # 'no-outline': None,
             # 'no-images': None,
         }
